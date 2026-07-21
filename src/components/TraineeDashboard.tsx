@@ -43,6 +43,23 @@ export default function TraineeDashboard({
   const [isGeneratingFeedback, setIsGeneratingFeedback] = useState(false);
   const [aiFeedbackResult, setAiFeedbackResult] = useState<string | null>(null);
 
+  // Security Protection States
+  const [securityStatus, setSecurityStatus] = useState<any>(null);
+  const [loadingSecurity, setLoadingSecurity] = useState(true);
+
+  React.useEffect(() => {
+    fetch('/api/security/status')
+      .then(res => res.json())
+      .then(data => {
+        setSecurityStatus(data);
+        setLoadingSecurity(false);
+      })
+      .catch(err => {
+        console.error("Failed to load security status:", err);
+        setLoadingSecurity(false);
+      });
+  }, []);
+
   // Certificate Modal state
   const [selectedCertificate, setSelectedCertificate] = useState<Certificate | null>(null);
 
@@ -584,6 +601,8 @@ export default function TraineeDashboard({
               </div>
             )}
           </div>
+
+
 
         </div>
 
