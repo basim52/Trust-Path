@@ -90,7 +90,14 @@ export default function AICoach({ points, addPoints, thoughtReframings, addRefra
       });
 
       if (!response.ok) {
-        throw new Error('فشل الخادم في الرد');
+        let serverErrorMsg = 'فشل الخادم في الرد';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            serverErrorMsg = errData.error;
+          }
+        } catch (e) {}
+        throw new Error(serverErrorMsg);
       }
 
       const data = await response.json();
@@ -105,13 +112,17 @@ export default function AICoach({ points, addPoints, thoughtReframings, addRefra
       addPoints(10); // Reward for interacting with the AI coach
     } catch (err: any) {
       console.error(err);
-      setError('حدث خطأ في الاتصال بالخادم الذكي. يرجى التأكد من تشغيل الخادم بشكل صحيح.');
+      setError(err.message || 'حدث خطأ في الاتصال بالخادم الذكي. يرجى التأكد من تشغيل الخادم بشكل صحيح.');
       
       // Local fallback reply
+      const fallbackText = err.message && err.message.includes('حماية أمنية') 
+        ? `⚠️ تنبيه أمني: ${err.message}`
+        : 'أعتذر منك يا صديقي، يبدو أن هناك ضغطاً مؤقتاً على خادم الذكاء الاصطناعي. تذكر دائماً أن تتحدث مع نفسك بلطف وتتقبل نقاط قوتك وعيوبك بالتساوي. أنا هنا لمساندتك دائماً!';
+
       setTimeout(() => {
         setMessages(prev => [...prev, {
           sender: 'coach',
-          text: 'أعتذر منك يا صديقي، يبدو أن هناك ضغطاً مؤقتاً على خادم الذكاء الاصطناعي. تذكر دائماً أن تتحدث مع نفسك بلطف وتتقبل نقاط قوتك وعيوبك بالتساوي. أنا هنا لمساندتك دائماً!',
+          text: fallbackText,
           timestamp: new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' })
         }]);
       }, 1000);
@@ -137,7 +148,14 @@ export default function AICoach({ points, addPoints, thoughtReframings, addRefra
       });
 
       if (!response.ok) {
-        throw new Error('فشل إعادة الصياغة المعرفية');
+        let serverErrorMsg = 'فشل إعادة الصياغة المعرفية';
+        try {
+          const errData = await response.json();
+          if (errData && errData.error) {
+            serverErrorMsg = errData.error;
+          }
+        } catch (e) {}
+        throw new Error(serverErrorMsg);
       }
 
       const data = await response.json();
@@ -146,13 +164,14 @@ export default function AICoach({ points, addPoints, thoughtReframings, addRefra
       // Save to thought history
       addReframedThought(negativeThoughtInput, data.reframed, data.distortion);
       addPoints(15); // Higher reward for doing CBT cognitive reframing!
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       // Fallback
+      const isSecurityError = err.message && err.message.includes('حماية أمنية');
       setReframeResult({
-        reframed: `أنا أمر بموقف صعب حالياً، لكن هذا لا يحدد قيمتي الإنسانية. سأتعلم مما حدث وأمضي قدماً خطوة بخطوة وبكل لطف.`,
-        distortion: "التعميم وجلد الذات الكلي",
-        advice: "حاول عدم استخدام الكلمات المطلقة كـ 'أبداً' أو 'دائماً'، واستبدلها بنبرة صديق ناصح ومتفهم."
+        reframed: isSecurityError ? `⚠️ تنبيه حماية: ${err.message}` : `أنا أمر بموقف صعب حالياً، لكن هذا لا يحدد قيمتي الإنسانية. سأتعلم مما حدث وأمضي قدماً خطوة بخطوة وبكل لطف.`,
+        distortion: isSecurityError ? "نظام حماية الخادم" : "التعميم وجلد الذات الكلي",
+        advice: isSecurityError ? "تم تفعيل حماية الإغراق لحماية المنصة من المدخلات الزائدة." : "حاول عدم استخدام الكلمات المطلقة كـ 'أبداً' أو 'دائماً'، واستبدلها بنبرة صديق ناصح ومتفهم."
       });
     } finally {
       setIsReframing(false);

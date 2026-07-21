@@ -6,13 +6,18 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Award, Sparkles, Heart, Smile, BookOpen, Brain, 
-  Lightbulb, ShieldCheck, UserCheck, Trash2, HelpCircle
+  Lightbulb, ShieldCheck, UserCheck, Trash2, HelpCircle, LogOut, Loader2
 } from 'lucide-react';
 import { TraineeProgress, Course, COURSES_DATA, PREDEFINED_HABITS, ReframedThought, Certificate } from './types';
 import TraineeDashboard from './components/TraineeDashboard';
 import CourseDetail from './components/CourseDetail';
 import AICoach from './components/AI_Coach';
 import SuggestionsSection from './components/SuggestionsSection';
+import AuthScreen from './components/AuthScreen';
+import AdminDashboard from './components/AdminDashboard';
+import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { doc, setDoc, getDoc } from 'firebase/firestore';
+import { auth, db } from './lib/firebase';
 
 // Initial state skeleton
 const INITIAL_PROGRESS: TraineeProgress = {
@@ -25,40 +30,122 @@ const INITIAL_PROGRESS: TraineeProgress = {
   points: 25, // starting gift XP
   gratitudeJournal: [],
   thoughtReframings: [],
-  assessments: {}
+  assessments: {},
+  completedParagraphs: {}
 };
 
 export default function App() {
-  const [progress, setProgress] = useState<TraineeProgress>(() => {
-    const saved = localStorage.getItem('trainee_progress_v1');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        return INITIAL_PROGRESS;
-      }
-    }
-    return INITIAL_PROGRESS;
-  });
+  const [user, setUser] = useState<{ uid: string; email: string } | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
-  const [studentName, setStudentName] = useState<string>(() => {
-    const saved = localStorage.getItem('trainee_student_name_v1');
-    if (saved === 'باسِم العتيبي' || saved === 'باسم العتيبي') {
-      return '';
-    }
-    return saved || '';
-  });
-
+  const [progress, setProgress] = useState<TraineeProgress>(INITIAL_PROGRESS);
+  const [studentName, setStudentName] = useState<string>('');
   const [activeTab, setActiveTab] = useState<string>('dashboard');
 
-  // Sync state to local storage
+  // Listen to Auth State
   useEffect(() => {
-    localStorage.setItem('trainee_progress_v1', JSON.stringify(progress));
-  }, [progress]);
+    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      if (firebaseUser) {
+        setUser({ uid: firebaseUser.uid, email: firebaseUser.email || '' });
+        
+        // Load data from firestore
+        const docRef = doc(db, 'users', firebaseUser.uid);
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.progress) {
+            setProgress(data.progress);
+          } else {
+            setProgress(INITIAL_PROGRESS);
+          }
+          if (data.name) {
+            setStudentName(data.name);
+          } else {
+            setStudentName('');
+          }
+        } else {
+          // New user (or first time DB is provisioned), write local progress if any
+          const localSaved = localStorage.getItem('trainee_progress_v1');
+          let startingProgress = INITIAL_PROGRESS;
+          if (localSaved) {
+            try { startingProgress = JSON.parse(localSaved); } catch (e) {}
+          }
+          const localName = localStorage.getItem('trainee_student_name_v1') || '';
+          
+          setProgress(startingProgress);
+          setStudentName(localName);
+
+          await setDoc(docRef, {
+            uid: firebaseUser.uid,
+            email: firebaseUser.email,
+            name: localName,
+            lastActive: new Date().toISOString(),
+            progress: startingProgress
+          });
+        }
+      } else {
+        setUser(null);
+        // Fallback to local storage for guests, or reset
+        const saved = localStorage.getItem('trainee_progress_v1');
+        if (saved) {
+          try { setProgress(JSON.parse(saved)); } catch (e) { setProgress(INITIAL_PROGRESS); }
+        } else {
+          setProgress(INITIAL_PROGRESS);
+        }
+        setStudentName(localStorage.getItem('trainee_student_name_v1') || '');
+      }
+      setAuthLoading(false);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Sync state to Firestore (if logged in) and local storage
+  useEffect(() => {
+    if (!authLoading) {
+      localStorage.setItem('trainee_progress_v1', JSON.stringify(progress));
+      
+      if (user) {
+        const docRef = doc(db, 'users', user.uid);
+        setDoc(docRef, {
+          uid: user.uid,
+          email: user.email,
+          name: studentName,
+          lastActive: new Date().toISOString(),
+          progress: progress
+        }, { merge: true }).catch(err => {
+          console.error("Error syncing progress to Firestore:", err);
+        });
+      }
+    }
+  }, [progress, user, authLoading]);
 
   useEffect(() => {
-    localStorage.setItem('trainee_student_name_v1', studentName);
-  }, [studentName]);
+    if (!authLoading) {
+      localStorage.setItem('trainee_student_name_v1', studentName);
+    }
+  }, [studentName, authLoading]);
+
+  // Handle Auth success from screen
+  const handleAuthSuccess = (uid: string, email: string, name: string, fetchedProgress: TraineeProgress | null) => {
+    setUser({ uid, email });
+    if (name) setStudentName(name);
+    if (fetchedProgress) {
+      setProgress(fetchedProgress);
+    }
+    // Set default tab for basim5252 as admin
+    if (email === 'basim5252@gmail.com') {
+      setActiveTab('admin');
+    } else {
+      setActiveTab('dashboard');
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (window.confirm('هل ترغب في تسجيل الخروج من حسابك؟')) {
+      await signOut(auth);
+      setActiveTab('dashboard');
+    }
+  };
 
   // Handle resetting state for demo/testing
   const handleResetData = () => {
@@ -189,6 +276,49 @@ export default function App() {
     });
   };
 
+  const toggleParagraphComplete = (key: string) => {
+    setProgress(prev => {
+      const current = prev.completedParagraphs || {};
+      const updated = {
+        ...current,
+        [key]: !current[key]
+      };
+      return {
+        ...prev,
+        completedParagraphs: updated
+      };
+    });
+  };
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center font-sans" dir="rtl">
+        <div className="text-center space-y-3">
+          <Loader2 className="w-10 h-10 animate-spin text-emerald-600 mx-auto" />
+          <p className="text-xs font-black text-slate-500">جاري تحميل مسار الثقة والتطوير...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-slate-50">
+        <AuthScreen onAuthSuccess={handleAuthSuccess} initialProgress={INITIAL_PROGRESS} />
+      </div>
+    );
+  }
+
+  const isAdmin = user.email === 'basim5252@gmail.com';
+
+  const navTabs = [
+    ...(isAdmin ? [{ id: 'admin', label: 'لوحة إدارة المتدربين 🔐', icon: <UserCheck className="w-4 h-4" /> }] : []),
+    { id: 'dashboard', label: 'لوحة التحكم والتقدم', icon: <Smile className="w-4 h-4" /> },
+    { id: 'courses', label: 'الدورات والتمارين', icon: <BookOpen className="w-4 h-4" /> },
+    { id: 'coach', label: 'المستشار النفسي الذكي', icon: <Brain className="w-4 h-4" /> },
+    { id: 'suggestions', label: 'توصيات المنصة', icon: <Lightbulb className="w-4 h-4" /> }
+  ];
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans antialiased selection:bg-emerald-100 selection:text-emerald-900" dir="rtl" id="app-root-container">
       
@@ -209,12 +339,7 @@ export default function App() {
 
           {/* Navigation tabs */}
           <nav className="hidden md:flex gap-1" id="desktop-nav">
-            {[
-              { id: 'dashboard', label: 'لوحة التحكم والتقدم', icon: <Smile className="w-4 h-4" /> },
-              { id: 'courses', label: 'الدورات والتمارين', icon: <BookOpen className="w-4 h-4" /> },
-              { id: 'coach', label: 'المستشار النفسي الذكي', icon: <Brain className="w-4 h-4" /> },
-              { id: 'suggestions', label: 'توصيات المنصة', icon: <Lightbulb className="w-4 h-4" /> }
-            ].map((tab) => (
+            {navTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
@@ -229,6 +354,11 @@ export default function App() {
 
           {/* User Fast Badge Stats */}
           <div className="flex items-center gap-3" id="header-user-status">
+            <div className="hidden sm:flex flex-col text-left items-end" dir="rtl">
+              <span className="text-[10px] font-black text-slate-700">{studentName || 'المتدرب'}</span>
+              <span className="text-[9px] text-slate-400 font-bold">{user.email}</span>
+            </div>
+
             <div className="bg-emerald-50 border border-emerald-100 px-3 py-1.5 rounded-full flex items-center gap-2" id="header-xp-badge">
               <Sparkles className="w-4 h-4 text-emerald-600 animate-pulse" />
               <span className="text-xs font-extrabold text-emerald-800" id="header-xp-val">{progress.points} XP</span>
@@ -243,27 +373,32 @@ export default function App() {
             >
               <Trash2 className="w-4 h-4" />
             </button>
+
+            {/* Logout helper */}
+            <button
+              onClick={handleSignOut}
+              className="p-2 bg-slate-50 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-xl border border-slate-100 transition-colors cursor-pointer"
+              title="تسجيل الخروج"
+              id="btn-sign-out"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
           </div>
 
         </div>
 
         {/* Mobile Navigation tabs (Visible only on small screens) */}
         <div className="md:hidden border-t border-slate-100 bg-white" id="mobile-nav-bar">
-          <div className="grid grid-cols-4 divide-x divide-slate-100" id="mobile-nav-grid">
-            {[
-              { id: 'dashboard', label: 'لوحة التحكم', icon: <Smile className="w-4 h-4 mx-auto" /> },
-              { id: 'courses', label: 'الدورات', icon: <BookOpen className="w-4 h-4 mx-auto" /> },
-              { id: 'coach', label: 'المستشار', icon: <Brain className="w-4 h-4 mx-auto" /> },
-              { id: 'suggestions', label: 'التوصيات', icon: <Lightbulb className="w-4 h-4 mx-auto" /> }
-            ].map((tab) => (
+          <div className={`grid ${isAdmin ? 'grid-cols-5' : 'grid-cols-4'} divide-x divide-slate-100`} id="mobile-nav-grid">
+            {navTabs.map((tab) => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
                 className={`py-2 px-1 text-center font-bold text-[10px] transition-colors cursor-pointer ${activeTab === tab.id ? 'bg-emerald-50 text-emerald-900' : 'text-slate-500 hover:bg-slate-50'}`}
                 id={`mobile-tab-${tab.id}`}
               >
-                {tab.icon}
-                <span className="block mt-0.5">{tab.label}</span>
+                <div className="flex justify-center">{tab.icon}</div>
+                <span className="block mt-0.5">{tab.id === 'admin' ? 'الإدارة' : tab.id === 'dashboard' ? 'اللوحة' : tab.id === 'courses' ? 'الدورات' : tab.id === 'coach' ? 'المستشار' : 'التوصيات'}</span>
               </button>
             ))}
           </div>
@@ -276,6 +411,8 @@ export default function App() {
         {/* Render tab panel conditionally */}
         {(() => {
           switch (activeTab) {
+            case 'admin':
+              return isAdmin ? <AdminDashboard adminEmail={user.email} /> : null;
             case 'dashboard':
               return (
                 <TraineeDashboard
@@ -301,6 +438,7 @@ export default function App() {
                   markCourseCertified={markCourseCertified}
                   studentName={studentName}
                   setActiveTab={setActiveTab}
+                  toggleParagraphComplete={toggleParagraphComplete}
                 />
               );
             case 'coach':

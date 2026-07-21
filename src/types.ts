@@ -49,6 +49,7 @@ export interface TraineeProgress {
   gratitudeJournal: JournalEntry[];
   thoughtReframings: ReframedThought[];
   assessments: Record<string, AssessmentResult>; // AssessmentType -> score & date
+  completedParagraphs?: Record<string, boolean>; // Unique element key -> boolean
 }
 
 export interface Certificate {
