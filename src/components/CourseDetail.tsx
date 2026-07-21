@@ -11,6 +11,7 @@ import {
   Bookmark, UserCheck, Flame, BookOpenCheck
 } from 'lucide-react';
 import { Course, Lesson, TraineeProgress, QuizQuestion } from '../types';
+import LessonExporter from './LessonExporter';
 
 interface CourseDetailProps {
   progress: TraineeProgress;
@@ -29,6 +30,7 @@ export default function CourseDetail({
 
   const [selectedCourse, setSelectedCourse] = useState<Course | null>(null);
   const [activeLessonIdx, setActiveLessonIdx] = useState<number>(0);
+  const [isExportOpen, setIsExportOpen] = useState(false);
   
   // Exercise state
   const [exerciseAnswer, setExerciseAnswer] = useState('');
@@ -765,11 +767,23 @@ export default function CourseDetail({
                             </h3>
                           </div>
                           
-                          <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3.5 py-1.5 rounded-2xl w-fit shrink-0 shadow-sm" id={`lesson-reading-dur-${lesson.id}`}>
-                            <BookOpen className="w-4 h-4 text-emerald-600" />
-                            <span className="text-[11px] text-slate-600 font-bold">
-                              {lesson.duration} قراءة متفحصة
-                            </span>
+                          <div className="flex flex-wrap items-center gap-2.5 sm:gap-3" id={`lesson-meta-actions-${lesson.id}`}>
+                            {/* Premium Export Button */}
+                            <button
+                              onClick={() => setIsExportOpen(true)}
+                              className="flex items-center gap-1.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white border border-amber-500/10 px-4 py-2 rounded-2xl text-[11px] font-black shadow-xs transition-all cursor-pointer hover:shadow-md hover:-translate-y-0.5 active:translate-y-0 shrink-0"
+                              title="تصدير وتزيين الدرس بصورة أنيقة ومزخرفة"
+                            >
+                              <Sparkles className="w-3.5 h-3.5 animate-pulse text-amber-100" />
+                              <span>تصدير الدرس بزخرفة أنيقة</span>
+                            </button>
+
+                            <div className="flex items-center gap-2 bg-slate-50 border border-slate-100 px-3.5 py-2.5 rounded-2xl w-fit shrink-0 shadow-sm" id={`lesson-reading-dur-${lesson.id}`}>
+                              <BookOpen className="w-4 h-4 text-emerald-600" />
+                              <span className="text-[11px] text-slate-600 font-bold">
+                                {lesson.duration} قراءة متفحصة
+                              </span>
+                            </div>
                           </div>
                         </div>
 
@@ -1083,6 +1097,16 @@ export default function CourseDetail({
 
           </div>
         </div>
+      )}
+
+      {/* Lesson Exporter Modal */}
+      {selectedCourse && selectedCourse.lessons[activeLessonIdx] && (
+        <LessonExporter
+          isOpen={isExportOpen}
+          onClose={() => setIsExportOpen(false)}
+          lesson={selectedCourse.lessons[activeLessonIdx]}
+          courseTitle={selectedCourse.title}
+        />
       )}
 
     </div>
