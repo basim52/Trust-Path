@@ -3,7 +3,9 @@ import {
   signInWithEmailAndPassword, 
   createUserWithEmailAndPassword, 
   signOut,
-  AuthError
+  AuthError,
+  GoogleAuthProvider,
+  signInWithPopup
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../lib/firebase';
@@ -35,7 +37,7 @@ export default function AuthScreen({ onAuthSuccess, initialProgress }: AuthScree
       case 'auth/wrong-password':
         return 'كلمة المرور غير صحيحة.';
       case 'auth/email-already-in-use':
-        return 'البريد الإلكتروني مستخدم بالفعل بحساب آخر.';
+        return 'البريد الإلكتروني مستخدم بالفعل بحساب آخر. الرجاء التبديل إلى "تسجيل الدخول" بالأعلى للدخول إلى حسابك.';
       case 'auth/weak-password':
         return 'كلمة المرور ضعيفة جداً (يجب أن لا تقل عن 6 خانات).';
       case 'auth/invalid-credential':
@@ -107,6 +109,48 @@ export default function AuthScreen({ onAuthSuccess, initialProgress }: AuthScree
     }
   };
 
+  const handleGoogleSignIn = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      const provider = new GoogleAuthProvider();
+      const result = await signInWithPopup(auth, provider);
+      const user = result.user;
+      
+      const userDocRef = doc(db, 'users', user.uid);
+      const userDoc = await getDoc(userDocRef);
+      
+      const email = user.email || '';
+      const name = user.displayName || 'مشارك مجهول';
+      
+      if (userDoc.exists()) {
+        const userData = userDoc.data();
+        onAuthSuccess(user.uid, email, userData.name || name, userData.progress || null);
+      } else {
+        // Create user document with initial progress
+        await setDoc(userDocRef, {
+          uid: user.uid,
+          email: email,
+          name: name,
+          lastActive: new Date().toISOString(),
+          progress: initialProgress
+        });
+        onAuthSuccess(user.uid, email, name, initialProgress);
+      }
+    } catch (err: any) {
+      console.error("Google sign in error:", err);
+      if (err.code === 'auth/popup-blocked') {
+        setError('تم حظر النافذة المنبثقة من قبل المتصفح. يرجى السماح بالمنبثقات لهذا الموقع أو فتح التطبيق في علامة تبويب جديدة مستقلة.');
+      } else if (err.code === 'auth/cancelled-popup-request') {
+        setError('تم إلغاء عملية تسجيل الدخول.');
+      } else {
+        setError('حدث خطأ أثناء تسجيل الدخول بجوجل. إذا كنت تستخدم التطبيق داخل نافذة مدمجة (Iframe)، يرجى الضغط على زر "فتح في علامة تبويب جديدة" بالأعلى لتجاوز قيود الأمان.');
+      }
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-[80vh] flex items-center justify-center p-4 font-sans" dir="rtl">
       <motion.div 
@@ -156,9 +200,23 @@ export default function AuthScreen({ onAuthSuccess, initialProgress }: AuthScree
         {/* Form Body */}
         <form onSubmit={handleSubmit} className="p-8 space-y-5">
           {error && (
-            <div className="bg-red-50 border border-red-100 text-red-700 p-4 rounded-2xl text-xs font-semibold flex items-start gap-2.5">
-              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
-              <span>{error}</span>
+            <div className="bg-red-50 border border-red-100 text-red-700 p-4 rounded-2xl text-xs font-semibold flex flex-col gap-2">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-600" />
+                <span>{error}</span>
+              </div>
+              {error.includes('البريد الإلكتروني مستخدم بالفعل') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLogin(true);
+                    setError('');
+                  }}
+                  className="mt-1 text-right text-emerald-700 hover:text-emerald-800 underline text-[11px] font-black cursor-pointer self-start"
+                >
+                  اضغط هنا للتبديل الفوري إلى "تسجيل الدخول" 🔑
+                </button>
+              )}
             </div>
           )}
 
@@ -242,6 +300,43 @@ export default function AuthScreen({ onAuthSuccess, initialProgress }: AuthScree
                 <span>{isLogin ? 'تسجيل الدخول إلى حسابي' : 'إنشاء حساب جديد وتفعيل المسار'}</span>
               </>
             )}
+          </button>
+
+          {/* Divider */}
+          <div className="relative flex py-2 items-center">
+            <div className="flex-grow border-t border-slate-150"></div>
+            <span className="flex-shrink mx-4 text-[11px] font-bold text-slate-400">أو سجل عبر</span>
+            <div className="flex-grow border-t border-slate-150"></div>
+          </div>
+
+          {/* Google Login Button */}
+          <button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={loading}
+            className={`w-full py-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 hover:border-slate-300 rounded-2xl text-xs font-black shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              loading ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+          >
+            <svg className="w-4 h-4" viewBox="0 0 24 24" referrerPolicy="no-referrer">
+              <path
+                fill="#EA4335"
+                d="M12 5.04c1.65 0 3.13.57 4.3 1.69l3.22-3.22C17.56 1.77 14.97 1 12 1 7.35 1 3.4 3.65 1.51 7.5l3.75 2.91C6.15 7.15 8.87 5.04 12 5.04z"
+              />
+              <path
+                fill="#4285F4"
+                d="M23.49 12.27c0-.81-.07-1.59-.2-2.36H12v4.51h6.46c-.28 1.48-1.12 2.74-2.38 3.58l3.71 2.88c2.17-2 3.7-4.94 3.7-8.61z"
+              />
+              <path
+                fill="#FBBC05"
+                d="M5.26 14.75a7.12 7.12 0 0 1 0-4.5L1.51 7.34a11.96 11.96 0 0 0 0 10.32l3.75-2.91z"
+              />
+              <path
+                fill="#34A853"
+                d="M12 23c3.24 0 5.97-1.07 7.96-2.91l-3.71-2.88c-1.03.69-2.35 1.1-4.25 1.1-3.13 0-5.85-2.11-6.79-5.37L1.46 16.3A11.97 11.97 0 0 0 12 23z"
+              />
+            </svg>
+            <span>تسجيل الدخول السريع باستخدام Google</span>
           </button>
         </form>
 
