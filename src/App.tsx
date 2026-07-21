@@ -42,7 +42,11 @@ export default function App() {
   });
 
   const [studentName, setStudentName] = useState<string>(() => {
-    return localStorage.getItem('trainee_student_name_v1') || 'باسِم العتيبي';
+    const saved = localStorage.getItem('trainee_student_name_v1');
+    if (saved === 'باسِم العتيبي' || saved === 'باسم العتيبي') {
+      return '';
+    }
+    return saved || '';
   });
 
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -172,7 +176,7 @@ export default function App() {
         id: `cert-${courseId}-${Date.now()}`,
         courseId,
         courseTitle,
-        studentName: studentName || 'باسِم العتيبي',
+        studentName: studentName || 'المشترك المتميز',
         issuedAt: new Date().toLocaleDateString('ar-EG'),
         verificationCode: `MT-${courseId.slice(0, 3).toUpperCase()}-${randomCode}`
       };
